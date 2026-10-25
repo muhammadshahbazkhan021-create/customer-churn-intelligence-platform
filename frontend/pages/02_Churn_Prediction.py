@@ -37,14 +37,20 @@ def load_local_pipeline():
 
 local_model, local_preprocessor, load_error = load_local_pipeline()
 
-
 def predict_locally(records_df):
-    from src.churn_project.data.clean_data import clean_data
-    from src.churn_project.features.build_features import build_features
+    from src.churn_project.data.clean_data import clean_customer_data
+    from src.churn_project.features.build_features import create_domain_features
 
-    cleaned_df = clean_data(records_df, is_training=False)
-    featured_df = build_features(cleaned_df, is_training=False)
+    # 1. Clean using your actual function name
+    cleaned_df = clean_customer_data(records_df, is_training=False)
+    
+    # 2. Build features using your actual function name
+    featured_df = create_domain_features(cleaned_df)
+    
+    # 3. Transform via loaded ColumnTransformer
     transformed_data = local_preprocessor.transform(featured_df)
+    
+    # 4. Predict probabilities via XGBoost
     probabilities = local_model.predict_proba(transformed_data)[:, 1]
 
     results = []
@@ -58,13 +64,11 @@ def predict_locally(records_df):
             segment = "Medium"
         else:
             segment = "High"
-        results.append(
-            {
-                "churn_prediction": int(is_churn),
-                "churn_probability": round(prob, 4),
-                "risk_segment": segment,
-            }
-        )
+        results.append({
+            "churn_prediction": int(is_churn),
+            "churn_probability": round(prob, 4),
+            "risk_segment": segment
+        })
     return results
 
 
