@@ -1,9 +1,16 @@
 import io
 import os
+import sys
+from pathlib import Path
 import joblib
 import pandas as pd
 import requests
 import streamlit as st
+
+# Ensure project root is in sys.path so 'src' imports cleanly on Streamlit Cloud
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 st.set_page_config(page_title="Churn Prediction Engine", page_icon="🔮", layout="wide")
 
@@ -13,19 +20,22 @@ st.markdown("Assess customer churn risks in real-time using either individual pr
 BASE_API_URL = os.getenv("API_URL", "http://127.0.0.1:8000/api/v1")
 
 
-# Direct fallback inference function for Streamlit Cloud
 @st.cache_resource
 def load_local_pipeline():
-    model_path = os.path.join("artifacts", "models", "best_model.joblib")
-    prep_path = os.path.join("artifacts", "preprocessors", "preprocessor.joblib")
-    if os.path.exists(model_path) and os.path.exists(prep_path):
-        model = joblib.load(model_path)
-        preprocessor = joblib.load(prep_path)
-        return model, preprocessor
-    return None, None
+    model_path = ROOT_DIR / "artifacts" / "models" / "best_model.joblib"
+    prep_path = ROOT_DIR / "artifacts" / "preprocessors" / "preprocessor.joblib"
+
+    if model_path.exists() and prep_path.exists():
+        try:
+            model = joblib.load(model_path)
+            preprocessor = joblib.load(prep_path)
+            return model, preprocessor, None
+        except Exception as e:
+            return None, None, f"Error loading artifacts: {e}"
+    return None, None, "Artifact files not found in artifacts/ directory."
 
 
-local_model, local_preprocessor = load_local_pipeline()
+local_model, local_preprocessor, load_error = load_local_pipeline()
 
 
 def predict_locally(records_df):
@@ -67,29 +77,17 @@ with tab1:
 
         with col1:
             st.markdown("##### **Account & Financials**")
-            tenure = st.slider(
-                "Tenure (Months)", min_value=0, max_value=72, value=12
-            )
-            monthly_charges = st.slider(
-                "Monthly Charges ($)", min_value=18.0, max_value=120.0, value=65.0
-            )
-            total_charges = st.slider(
-                "Total Charges ($)", min_value=0.0, max_value=9000.0, value=780.0
-            )
-            contract = st.selectbox(
-                "Contract Type", ["Month-to-month", "One year", "Two year"]
-            )
+            tenure = st.slider("Tenure (Months)", min_value=0, max_value=72, value=12)
+            monthly_charges = st.slider("Monthly Charges ($)", min_value=18.0, max_value=120.0, value=65.0)
+            total_charges = st.slider("Total Charges ($)", min_value=0.0, max_value=9000.0, value=780.0)
+            contract = st.selectbox("Contract Type", ["Month-to-month", "One year", "Two year"])
             paperless_billing = st.selectbox("Paperless Billing", ["Yes", "No"])
 
         with col2:
             st.markdown("##### **Connectivity & Services**")
             phone_service = st.selectbox("Phone Service", ["Yes", "No"])
-            multiple_lines = st.selectbox(
-                "Multiple Lines", ["No", "Yes", "No phone service"]
-            )
-            internet_service = st.selectbox(
-                "Internet Service", ["DSL", "Fiber optic", "No"]
-            )
+            multiple_lines = st.selectbox("Multiple Lines", ["No", "Yes", "No phone service"])
+            internet_service = st.selectbox("Internet Service", ["DSL", "Fiber optic", "No"])
             payment_method = st.selectbox(
                 "Payment Method",
                 [
@@ -102,24 +100,12 @@ with tab1:
 
         with col3:
             st.markdown("##### **Add-on Subscriptions**")
-            online_security = st.selectbox(
-                "Online Security", ["No", "Yes", "No internet service"]
-            )
-            online_backup = st.selectbox(
-                "Online Backup", ["No", "Yes", "No internet service"]
-            )
-            device_protection = st.selectbox(
-                "Device Protection", ["No", "Yes", "No internet service"]
-            )
-            tech_support = st.selectbox(
-                "Tech Support", ["No", "Yes", "No internet service"]
-            )
-            streaming_tv = st.selectbox(
-                "Streaming TV", ["No", "Yes", "No internet service"]
-            )
-            streaming_movies = st.selectbox(
-                "Streaming Movies", ["No", "Yes", "No internet service"]
-            )
+            online_security = st.selectbox("Online Security", ["No", "Yes", "No internet service"])
+            online_backup = st.selectbox("Online Backup", ["No", "Yes", "No internet service"])
+            device_protection = st.selectbox("Device Protection", ["No", "Yes", "No internet service"])
+            tech_support = st.selectbox("Tech Support", ["No", "Yes", "No internet service"])
+            streaming_tv = st.selectbox("Streaming TV", ["No", "Yes", "No internet service"])
+            streaming_movies = st.selectbox("Streaming Movies", ["No", "Yes", "No internet service"])
 
         submit_btn = st.form_submit_button("Predict Churn Risk")
 
@@ -149,11 +135,9 @@ with tab1:
 
         prob, risk_tier = None, None
 
-        # Try API first, fallback to direct artifacts if offline
+        # 1. Try API first
         try:
-            resp = requests.post(
-                f"{BASE_API_URL}/predict", json=payload, timeout=3
-            )
+            resp = requests.post(f"{BASE_API_URL}/predict", json=payload, timeout=2)
             if resp.status_code == 200:
                 res = resp.json()
                 prob = res.get("churn_probability")
@@ -161,12 +145,17 @@ with tab1:
         except Exception:
             pass
 
+        # 2. Local Fallback
         if prob is None and local_model is not None:
-            df_input = pd.DataFrame([payload])
-            local_res = predict_locally(df_input)[0]
-            prob = local_res["churn_probability"]
-            risk_tier = local_res["risk_segment"]
+            try:
+                df_input = pd.DataFrame([payload])
+                local_res = predict_locally(df_input)[0]
+                prob = local_res["churn_probability"]
+                risk_tier = local_res["risk_segment"]
+            except Exception as e:
+                st.error(f"Local inference computation failed: {e}")
 
+        # Render Results
         if prob is not None:
             st.markdown("---")
             st.subheader("🎯 Risk Assessment Output")
@@ -184,10 +173,8 @@ with tab1:
                 else:
                     st.markdown("### 🔴 **Risk Level:** High Risk")
                     st.error("Critical flight risk! Proactive retention needed.")
-        else:
-            st.error(
-                "Unable to evaluate prediction. Model artifacts not accessible."
-            )
+        elif local_model is None:
+            st.error(f"Prediction unavailable: {load_error}")
 
 with tab2:
     st.subheader("Bulk File Processing Portal")
@@ -200,24 +187,23 @@ with tab2:
 
         if st.button("Process Batch Prediction"):
             predictions_list = None
-
-            # Try API first
             try:
                 records = input_df.to_dict(orient="records")
-                batch_payload = {"customers": records}
                 resp = requests.post(
                     f"{BASE_API_URL}/predict/batch",
-                    json=batch_payload,
-                    timeout=10,
+                    json={"customers": records},
+                    timeout=5,
                 )
                 if resp.status_code == 200:
                     predictions_list = resp.json().get("predictions", [])
             except Exception:
                 pass
 
-            # Fallback to local
             if predictions_list is None and local_model is not None:
-                predictions_list = predict_locally(input_df)
+                try:
+                    predictions_list = predict_locally(input_df)
+                except Exception as e:
+                    st.error(f"Batch local inference error: {e}")
 
             if predictions_list:
                 pred_df = pd.DataFrame(predictions_list)
@@ -228,11 +214,7 @@ with tab2:
                     ],
                     axis=1,
                 )
-
-                st.success(
-                    f"🎉 Processed {len(scored_df)} customer records"
-                    " successfully!"
-                )
+                st.success(f"🎉 Processed {len(scored_df)} customer records successfully!")
                 st.dataframe(scored_df.head(10), use_container_width=True)
 
                 csv_buffer = io.StringIO()
@@ -243,5 +225,3 @@ with tab2:
                     file_name="customer_churn_scored.csv",
                     mime="text/csv",
                 )
-            else:
-                st.error("Failed to process batch.")
