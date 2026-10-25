@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.env
+.venv/
+venv/
+env/
+.pytest_cache/
+artifacts/models/*.joblib
+artifacts/preprocessors/*.joblib
+data/interim/*
+data/processed/*
+!data/raw/customer_churn.csv
+*.db
+.DS_Store

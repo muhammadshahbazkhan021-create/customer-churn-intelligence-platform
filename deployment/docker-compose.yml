@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  # ---- FASTAPI BACKEND SERVICE ----
+  api:
+    build:
+      context: ..   # Points to the root directory where code and requirements live
+      dockerfile: deployment/Dockerfile
+    container_name: churn_backend_api
+    ports:
+      - "8000:8000"
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ../:/app    # Mount source code locally for active debugging/reloads
+    environment:
+      - LOG_LEVEL=info
+
+  # ---- STREAMLIT FRONTEND SERVICE ----
+  frontend:
+    build:
+      context: ..   # Shares the same base docker cached layers
+      dockerfile: deployment/Dockerfile
+    container_name: churn_streamlit_frontend
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api         # Ensures the backend engine initializations boot first
+    command: streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0
+    volumes:
+      - ../:/app    # Live volume mount
+    environment:
+      - API_URL=http://api:8000/api/v1  # Points internal requests directly to the API container
