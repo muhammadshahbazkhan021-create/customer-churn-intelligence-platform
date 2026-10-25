@@ -1,46 +1,53 @@
-import streamlit as st
+import os
 import requests
+import streamlit as st
 
-# 1. Page Configuration
 st.set_page_config(
-    page_title="Customer Churn Intelligence", 
-    page_icon="📊", 
+    page_title="Customer Churn Intelligence Platform",
+    page_icon="🔮",
     layout="wide"
 )
 
-# 2. Backend API Health Check Banner
-def check_backend_status():
-    api_url = "http://127.0.0.1:8000/api/v1/health"
-    try:
-        # 2 seconds timeout taake app hang na ho agar backend down ho
-        response = requests.get(api_url, timeout=2)
-        if response.status_code == 200:
-            data = response.json()
-            # Assuming your health API returns {"status": "healthy", "model_loaded": True}
-            is_model_loaded = data.get("model_loaded", True) 
-            return True, is_model_loaded
-        return False, False
-    except requests.exceptions.RequestException:
-        return False, False
+st.title("🔮 Customer Churn Intelligence Platform")
+st.markdown("### Production-Grade Predictive Analytics & Retention System")
 
-# Check status and display banner
-is_online, model_loaded = check_backend_status()
+BASE_API_URL = os.getenv("API_URL", "http://127.0.0.1:8000/api/v1")
 
-if is_online:
-    st.success(f"🟢 **API Status:** Online | **Model Loaded:** {model_loaded}")
-else:
-    st.warning("⚠️ **Backend API Connection Failed:** Please ensure your FastAPI server is running on http://127.0.0.1:8000")
+# Check Backend API Status with Graceful Local Mode Fallback
+api_status = False
+try:
+    health_resp = requests.get(f"{BASE_API_URL}/health", timeout=2)
+    if health_resp.status_code == 200:
+        api_status = True
+except Exception:
+    api_status = False
 
-# 3. Project Overview
-st.title("📊 Customer Churn Intelligence Portal")
-st.markdown("""
-### Project Overview
-Welcome to the Customer Churn Intelligence platform. Customer churn occurs when customers stop doing business with a company. 
-This dashboard leverages advanced Machine Learning to identify high-risk customers, uncover key churn drivers, 
-and provide actionable retention strategies to maximize customer lifetime value.
-""")
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    if api_status:
+        st.success("🟢 **Backend API:** Online (FastAPI)")
+    else:
+        st.info("🟡 **Inference Engine:** Standalone Mode (Direct Artifacts)")
+
+with col2:
+    st.metric(label="Model Architecture", value="XGBoost Classifier")
+
+with col3:
+    st.metric(label="Optimized Threshold", value="0.42 (High Recall)")
 
 st.divider()
+
+st.markdown("""
+Welcome to the **Customer Churn Intelligence Platform**. This system enables enterprise retention teams to:
+
+1. **Explore Cohorts:** Analyze customer demographics, contracts, and service subscriptions.
+2. **Predict Risk:** Run real-time single evaluations or upload bulk customer CSV files.
+3. **Audit Performance:** Review model evaluation coefficients, confusion matrix distribution, and business ROI savings.
+
+👈 **Navigate using the sidebar to explore features.**
+""")
+
 
 # 4. KPI Metrics
 st.subheader("Global Churn Key Performance Indicators (KPIs)")
